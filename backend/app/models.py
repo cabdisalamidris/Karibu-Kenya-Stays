@@ -40,6 +40,7 @@ class Hotel(db.Model):
     def public(self):
         return {
             "id": self.id, "name": self.name, "location": self.location,
+            "city": self.location.split(",")[0].strip(),
             "description": self.description, "price_per_night": self.price_per_night,
             "available_rooms": self.available_rooms, "image_url": self.image_url,
             "rating": self.rating, "amenities": [item.strip() for item in self.amenities.split(",") if item.strip()],
