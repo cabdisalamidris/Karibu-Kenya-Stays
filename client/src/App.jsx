@@ -8,6 +8,27 @@ const destinations = [
   ['Nairobi', 'Kenya', 'City, culture & wildlife'], ['Nakuru', 'Kenya', 'Lake & Rift Valley'], ['Naivasha', 'Kenya', 'Rally & lakeside'],
   ['Mombasa', 'Kenya', 'Indian Ocean coast'], ['Eldoret', 'Kenya', 'Athletics & highlands'],
 ]
+const fallbackHotelNames = [
+  ['Giraffe Manor', 'Nairobi Serena Hotel', 'Tribe Hotel', 'Hemingways Nairobi', 'Fairmont The Norfolk'],
+  ['Sarova Woodlands Hotel & Spa', 'The Cliff Nakuru', 'Lake Nakuru Lodge', 'Merica Hotel', 'Sarova Lion Hill Game Lodge'],
+  ['Enashipai Resort & Spa', 'Great Rift Valley Lodge & Golf Resort', 'Lake Naivasha Sopa Resort', 'Sawela Lodges', 'Lake Naivasha Country Club'],
+  ['Sarova Whitesands Beach Resort & Spa', 'EnglishPoint Marina', 'PrideInn Paradise Beach Resort', 'Voyager Beach Resort', 'Serena Beach Resort & Spa'],
+  ['Eka Hotel Eldoret', 'Boma Inn Eldoret', 'The Noble Hotel & Conference Centre', 'Sirikwa Hotel', 'Comfy Inn Eldoret'],
+]
+const fallbackHotelPhotos = [
+  'photo-1516426122078-c23e76319801', 'photo-1542314831-068cd1dbfeeb', 'photo-1566073771259-6a8506099945', 'photo-1584132967334-10e028bd69f7', 'photo-1601918774946-25832a4be0d6',
+  'photo-1551882547-ff40c63fe5fa', 'photo-1500534314209-a25ddb2bd429', 'photo-1571896349842-33c89424de2d', 'photo-1564501049412-61c2a3083791', 'photo-1582719508461-905c673771fd',
+  'photo-1540555700478-4be289fbecef', 'photo-1500530855697-b586d89ba3ee', 'photo-1590490360182-c33d57733427', 'photo-1561501900-3701fa6a0864', 'photo-1590490359683-658d3d23f972',
+  'photo-1514282401047-d79a71a590e8', 'photo-1499793983690-e29da59ef1c2', 'photo-1520250497591-112f2f40a3f4', 'photo-1507525428034-b723cf961d3e', 'photo-1540202404-a2f29016b523',
+  'photo-1522771739844-6a9f6d5f14af', 'photo-1445019980597-93fa8acb246c', 'photo-1556742049-0cfed4f6a45d', 'photo-1556740749-887f6717d7e4', 'photo-1540518614846-7eded433c457',
+]
+const demoHotels = destinations.flatMap(([city, country, focus], cityIndex) => fallbackHotelNames[cityIndex].map((name, index) => ({
+  id: `preview-${cityIndex}-${index}`, name, location: `${city}, ${country}`,
+  description: `A considered ${focus.toLowerCase()} hotel experience in Kenya.`,
+  price_per_night: 16000 + (cityIndex * 1800) + (index * 4200), available_rooms: 7 + index,
+  rating: 4.4 + (index / 10), amenities: ['Breakfast', 'Gym access', 'Wi-Fi', 'Local concierge'],
+  image_url: `https://images.unsplash.com/${fallbackHotelPhotos[(cityIndex * 5) + index]}?auto=format&fit=crop&w=1200&q=85`,
+})) )
 const serviceCards = [
   { type: 'wellness', icon: '◌', title: 'Yoga & recovery', text: 'Sunrise yoga, mobility and restorative sessions in the hotel gym.', action: 'Reserve a yoga session' },
   { type: 'training', icon: '↗', title: 'Gym & training', text: 'Strength, cardio and guided training activities for every level.', action: 'Plan a training session' },
@@ -27,7 +48,7 @@ const dataFrom = async (response) => { try { return await response.json() } catc
 const imageFallback = (event) => { event.currentTarget.onerror = null; event.currentTarget.src = 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?auto=format&fit=crop&w=1200&q=85' }
 
 function App() {
-  const [hotels, setHotels] = useState([])
+  const [hotels, setHotels] = useState(demoHotels)
   const [cars, setCars] = useState(fallbackCars)
   const [country, setCountry] = useState('All')
   const [city, setCity] = useState('All')
@@ -45,7 +66,7 @@ function App() {
 
   const notify = useCallback((text) => { setNotice(text); window.setTimeout(() => setNotice(''), 4500) }, [])
   const loadHotels = useCallback(async () => {
-    try { const response = await fetch(`${API}/api/hotels`); const payload = await dataFrom(response); if (response.ok && Array.isArray(payload)) setHotels(payload) } catch { notify('Hotel information is temporarily unavailable.') }
+    try { const response = await fetch(`${API}/api/hotels`); const payload = await dataFrom(response); if (response.ok && Array.isArray(payload) && payload.length) setHotels(payload) } catch { /* The curated preview catalogue remains available offline. */ }
   }, [notify])
   const loadJourney = useCallback(async () => {
     if (!token) return
@@ -70,9 +91,17 @@ function App() {
 
   function saveSession(payload) { localStorage.setItem('karibu-token', payload.token); localStorage.setItem('karibu-user', JSON.stringify(payload.user)); setToken(payload.token); setUser(payload.user) }
   async function submitAuth(event) {
-    event.preventDefault(); const body = Object.fromEntries(new FormData(event.currentTarget)); const response = await fetch(`${API}/api/auth/${auth}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const payload = await dataFrom(response)
-    if (!response.ok) return notify(payload.message || 'We could not complete that request.')
-    saveSession(payload); setAuth(null); notify(`Welcome, ${payload.user.username}.`)
+    event.preventDefault()
+    if (!API && !import.meta.env.DEV) return notify('Account service is not configured. Set VITE_API_URL to the Flask API URL, then redeploy.')
+    const body = Object.fromEntries(new FormData(event.currentTarget))
+    try {
+      const response = await fetch(`${API}/api/auth/${auth}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const payload = await dataFrom(response)
+      if (!response.ok) return notify(payload.message || 'We could not complete that request.')
+      saveSession(payload); setAuth(null); notify(`Welcome, ${payload.user.username}.`)
+    } catch {
+      notify('The account service could not be reached. Check VITE_API_URL and Render FRONTEND_URL settings.')
+    }
   }
   async function reserveHotel(event) {
     event.preventDefault(); if (!token) { setAuth('login'); return notify('Sign in or create an account to book a hotel.') }
@@ -114,7 +143,7 @@ function App() {
 function HotelModal({ hotel, close, reserve }) { const [reviews, setReviews] = useState([]); useEffect(() => { fetch(`${API}/api/hotels/${hotel.id}/reviews`).then(dataFrom).then((data) => { if (Array.isArray(data)) setReviews(data) }).catch(() => {}) }, [hotel.id]); return <div className="overlay" onMouseDown={close}><section className="modal hotel-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close" onClick={close}>×</button><img src={hotel.image_url} onError={imageFallback} alt={hotel.name} /><div className="modal-copy"><p className="eyebrow">{hotel.location}</p><h2>{hotel.name}</h2><p>{hotel.description}</p><div className="details"><b>★ {Number(hotel.rating).toFixed(1)} guest perspective</b><span>{hotel.amenities.join(' · ')}</span><strong>{currency.format(hotel.price_per_night)} <small>per night</small></strong></div><form className="book-form" onSubmit={reserve}><label>Check in<input name="check_in" type="date" min={today} required /></label><label>Check out<input name="check_out" type="date" min={today} required /></label><label>Guests<select name="guests" defaultValue="2">{[1, 2, 3, 4, 5, 6].map((number) => <option key={number}>{number}</option>)}</select></label><button className="primary">Book this hotel <span>↗</span></button></form><div className="reviews"><h3>Guest experiences</h3>{reviews.length ? reviews.slice(0, 3).map((review) => <article key={review.id}><b>★ {review.rating} · {review.guest_name}</b><p>{review.comment}</p></article>) : <p>Be the first booked guest to share an experience.</p>}</div></div></section></div> }
 function ServiceModal({ service, close, submit }) { return <div className="overlay" onMouseDown={close}><section className="modal compact-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close" onClick={close}>×</button><p className="eyebrow">Guest service request</p><h2>{service.title}</h2><p>Tell the guest team when you would like this service. They will track and confirm the request in your journey.</p><form className="book-form" onSubmit={submit}><label>Preferred date<input name="scheduled_for" type="date" min={today} required /></label><label className="wide">Notes<textarea name="notes" placeholder="Time, goals, pickup point, group size or any useful details" maxLength="500" /></label><button className="primary">Send request <span>↗</span></button></form></section></div> }
 function ReviewModal({ booking, close, submit }) { return <div className="overlay" onMouseDown={close}><section className="modal compact-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close" onClick={close}>×</button><p className="eyebrow">Guest perspective</p><h2>How was {booking.hotel.name}?</h2><p>Your rating and comment help future guests and update the hotel’s customer score.</p><form className="book-form" onSubmit={submit}><label>Rating<select name="rating" defaultValue="5">{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating} stars</option>)}</select></label><label className="wide">Your experience<textarea name="comment" minLength="8" placeholder="What did you enjoy, and what should a future guest know?" required /></label><button className="primary">Publish review <span>↗</span></button></form></section></div> }
-function AuthModal({ mode, close, submit, switchMode }) { const registering = mode === 'register'; return <div className="overlay" onMouseDown={close}><section className="modal compact-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close" onClick={close}>×</button><p className="eyebrow">Karibu account</p><h2>{registering ? 'Start your journey.' : 'Welcome back.'}</h2><p>{registering ? 'Create an account to book hotels, request guest services and leave guest reviews.' : 'Sign in to manage your bookings and requests.'}</p><form className="book-form" onSubmit={submit}>{registering && <label className="wide">Full name<input name="username" minLength="3" required /></label>}<label className="wide">Email<input name="email" type="email" required /></label><label className="wide">Password<input name="password" type="password" minLength="6" required /></label><button className="primary">{registering ? 'Create account' : 'Sign in'} <span>↗</span></button></form><p className="switch">{registering ? 'Already have an account?' : 'New to Karibu?'} <button onClick={switchMode}>{registering ? 'Sign in' : 'Create one'}</button></p></section></div> }
+function AuthModal({ mode, close, submit, switchMode }) { const registering = mode === 'register'; return <div className="overlay" onMouseDown={close}><section className="modal compact-modal" onMouseDown={(event) => event.stopPropagation()}><button type="button" className="close" onClick={close}>×</button><p className="eyebrow">Karibu account</p><h2>{registering ? 'Start your journey.' : 'Welcome back.'}</h2><p>{registering ? 'Create an account to book hotels, request guest services and leave guest reviews.' : 'Sign in to manage your bookings and requests.'}</p><form className="book-form" onSubmit={submit}>{registering && <label className="wide">Full name<input name="username" minLength="3" required /></label>}<label className="wide">Email<input name="email" type="email" required /></label><label className="wide">Password<input name="password" type="password" minLength="6" required /></label><button type="submit" className="primary">{registering ? 'Create account' : 'Sign in'} <span>↗</span></button></form><p className="switch">{registering ? 'Already have an account?' : 'New to Karibu?'} <button type="button" onClick={switchMode}>{registering ? 'Sign in' : 'Create one'}</button></p></section></div> }
 
 function AdminWorkspace({ token, hotels, setHotels, exit, notify }) {
   const [data, setData] = useState(null); const [tab, setTab] = useState('overview')
