@@ -43,9 +43,9 @@ HOTELS = [
 ]
 
 CARS = [
-    ("Rift Valley Safari Cruiser", "Toyota Land Cruiser", 22000, 6, "Professional safari driver-guide", IMAGE.format("photo-1517400508447-f8dd518b86db"), "Comfortable airport, park and Safari Rally transfers across the Rift Valley."),
-    ("Coastal Explorer", "Toyota Prado", 18000, 5, "Licensed coastal driver", IMAGE.format("photo-1503376780353-7e6692767b70"), "Private Mombasa airport and beach-hotel transfers with flexible stops."),
-    ("Nairobi City Transfer", "Toyota Hiace", 14000, 8, "Vetted local driver", IMAGE.format("photo-1549317661-bd32c8ce0db2"), "Group transfers for Nairobi hotels, the airport and day excursions."),
+    ("Safari Grand Tourer", "Porsche Cayenne", 42000, 4, "Professional driver and route support", IMAGE.format("photo-1503376780353-7e6692767b70"), "A performance grand tourer for Nairobi, the Rift Valley and the coast."),
+    ("Coastal Roadster", "Mercedes-AMG SL", 52000, 2, "Concierge handover and roadside support", IMAGE.format("photo-1492144534655-ae79c964c9d7"), "An open-top sports car for a curated coastal drive and private photo stops."),
+    ("Highland Sport SUV", "Range Rover Sport", 46000, 5, "Vetted driver-guide available", IMAGE.format("photo-1519641471654-76ce0107ad1b"), "A capable premium vehicle for highland roads, lodges and day adventures."),
 ]
 
 # A distinct visual for every property keeps the destination catalogue useful at
@@ -102,4 +102,8 @@ def seed_database():
     if not CarService.query.first():
         for car in CARS:
             db.session.add(CarService(name=car[0], vehicle_type=car[1], price_per_day=car[2], seats=car[3], security_detail=car[4], image_url=car[5], description=car[6]))
+    elif CarService.query.count() == 3:
+        for record, car in zip(CarService.query.order_by(CarService.id).all(), CARS):
+            record.name, record.vehicle_type, record.price_per_day = car[0], car[1], car[2]
+            record.seats, record.security_detail, record.image_url, record.description = car[3], car[4], car[5], car[6]
     db.session.commit()

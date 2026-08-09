@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 
 from .extensions import bcrypt, db
-from .models import Booking, CarBooking, CarService, Hotel, User
+from .models import Booking, CarBooking, CarService, Hotel, Review, ServiceRequest, User
 
 api = Blueprint("api", __name__, url_prefix="/api")
 
@@ -40,7 +40,7 @@ def hotel_payload(data, hotel=None):
 
 @api.get("/health")
 def health():
-    return {"message": "Aurum Reserve API is online"}
+    return {"message": "Karibu Stays API is online"}
 
 
 @api.post("/auth/register")
@@ -87,6 +87,41 @@ def hotels():
 def hotel_detail(hotel_id):
     hotel = db.session.get(Hotel, hotel_id)
     return jsonify(hotel.public()) if hotel else message("Hotel not found.", 404)
+
+
+@api.get("/hotels/<int:hotel_id>/reviews")
+def hotel_reviews(hotel_id):
+    hotel = db.session.get(Hotel, hotel_id)
+    if not hotel:
+        return message("Hotel not found.", 404)
+    return jsonify([review.public() for review in Review.query.filter_by(hotel_id=hotel.id).order_by(Review.id.desc()).all()])
+
+
+@api.post("/hotels/<int:hotel_id>/reviews")
+@jwt_required()
+def create_review(hotel_id):
+    hotel = db.session.get(Hotel, hotel_id)
+    data = request.get_json(silent=True) or {}
+    try:
+        rating = int(data.get("rating", 0))
+    except (TypeError, ValueError):
+        rating = 0
+    comment = str(data.get("comment", "")).strip()
+    user_id = int(get_jwt_identity())
+    has_stayed = Booking.query.filter_by(user_id=user_id, hotel_id=hotel_id).first()
+    if not hotel:
+        return message("Hotel not found.", 404)
+    if not has_stayed:
+        return message("Only guests with a booking can share a hotel experience.", 403)
+    if rating < 1 or rating > 5 or len(comment) < 8:
+        return message("Choose a rating from 1 to 5 and add a comment of at least 8 characters.")
+    review = Review(rating=rating, comment=comment, user_id=user_id, hotel_id=hotel.id)
+    db.session.add(review)
+    db.session.flush()
+    scores = [item.rating for item in hotel.reviews]
+    hotel.rating = round(sum(scores) / len(scores), 1)
+    db.session.commit()
+    return jsonify({"review": review.public(), "hotel": hotel.public(), "message": "Thank you for sharing your experience."}), 201
 
 
 @api.get("/cars")
@@ -142,6 +177,36 @@ def bookings():
     return jsonify([item.public() for item in stays] + [item.public() for item in transfers])
 
 
+@api.get("/service-requests")
+@jwt_required()
+def service_requests():
+    requests = ServiceRequest.query.filter_by(user_id=int(get_jwt_identity())).order_by(ServiceRequest.scheduled_for.desc()).all()
+    return jsonify([item.public() for item in requests])
+
+
+@api.post("/service-requests")
+@jwt_required()
+def create_service_request():
+    data = request.get_json(silent=True) or {}
+    service_type = str(data.get("service_type", "")).strip().lower()
+    service_name = str(data.get("service_name", "")).strip()
+    notes = str(data.get("notes", "")).strip()
+    allowed_types = {"wellness", "training", "physiotherapy", "guide", "security", "sport_car"}
+    try:
+        scheduled_for = date.fromisoformat(data["scheduled_for"])
+    except (KeyError, TypeError, ValueError):
+        return message("Choose a valid service date.")
+    if service_type not in allowed_types or not service_name or scheduled_for < date.today():
+        return message("Please choose a valid future service and date.")
+    request_item = ServiceRequest(
+        service_type=service_type, service_name=service_name,
+        scheduled_for=scheduled_for, notes=notes[:500], user_id=int(get_jwt_identity()),
+    )
+    db.session.add(request_item)
+    db.session.commit()
+    return jsonify({"request": request_item.public(), "message": "Your service request has been sent to the guest team."}), 201
+
+
 @api.delete("/bookings/<int:booking_id>")
 @jwt_required()
 def cancel_booking(booking_id):
@@ -169,12 +234,16 @@ def admin_dashboard():
         .all()
     )
     users = User.query.order_by(User.created_at.desc()).limit(12).all()
+    recent_services = ServiceRequest.query.order_by(ServiceRequest.id.desc()).limit(12).all()
+    recent_reviews = Review.query.order_by(Review.id.desc()).limit(8).all()
     return jsonify({
         "metrics": {
             "travellers": User.query.filter_by(role="customer").count(),
             "reservations": Booking.query.count(),
             "active_stays": Booking.query.filter(Booking.check_out >= date.today()).count(),
             "properties": Hotel.query.count(),
+            "service_requests": ServiceRequest.query.count(),
+            "guest_reviews": Review.query.count(),
         },
         "popular_hotels": [{**hotel.public(), "booking_count": count} for hotel, count in popular],
         "recent_bookings": [{
@@ -182,7 +251,14 @@ def admin_dashboard():
             "guest_name": booking.user.username,
             "guest_email": booking.user.email,
         } for booking in recent_bookings],
-        "travellers": [{**member.public(), "joined": member.created_at.date().isoformat()} for member in users],
+        "recent_services": [item.public() for item in recent_services],
+        "recent_reviews": [item.public() for item in recent_reviews],
+        "travellers": [{
+            **member.public(), "joined": member.created_at.date().isoformat(),
+            "booking_count": Booking.query.filter_by(user_id=member.id).count(),
+            "service_count": ServiceRequest.query.filter_by(user_id=member.id).count(),
+            "review_count": Review.query.filter_by(user_id=member.id).count(),
+        } for member in users],
     })
 
 
