@@ -1,4 +1,5 @@
 from datetime import date
+from sqlalchemy import func
 from functools import wraps
 
 from flask import Blueprint, jsonify, request
@@ -75,7 +76,11 @@ def me():
 
 @api.get("/hotels")
 def hotels():
-    return jsonify([hotel.public() for hotel in Hotel.query.order_by(Hotel.featured.desc(), Hotel.rating.desc()).all()])
+    city = str(request.args.get("city", "")).strip().lower()
+    query = Hotel.query
+    if city and city != "all":
+        query = query.filter(func.lower(Hotel.location).like(f"{city},%"))
+    return jsonify([hotel.public() for hotel in query.order_by(Hotel.featured.desc(), Hotel.rating.desc()).all()])
 
 
 @api.get("/hotels/<int:hotel_id>")
@@ -99,7 +104,7 @@ def create_booking():
     except (KeyError, TypeError, ValueError):
         return message("Enter valid stay dates and guest count.")
     hotel = db.session.get(Hotel, hotel_id)
-    if not hotel or check_out <= check_in or guests < 1:
+    if not hotel or check_in < date.today() or check_out <= check_in or guests < 1:
         return message("Please check your selected hotel and travel dates.")
     if hotel.available_rooms < 1:
         return message("This residence has no rooms currently available.", 409)
@@ -135,6 +140,50 @@ def bookings():
     stays = Booking.query.filter_by(user_id=user_id).order_by(Booking.check_in.desc()).all()
     transfers = CarBooking.query.filter_by(user_id=user_id).order_by(CarBooking.service_date.desc()).all()
     return jsonify([item.public() for item in stays] + [item.public() for item in transfers])
+
+
+@api.delete("/bookings/<int:booking_id>")
+@jwt_required()
+def cancel_booking(booking_id):
+    booking = db.session.get(Booking, booking_id)
+    if not booking or booking.user_id != int(get_jwt_identity()):
+        return message("Booking not found.", 404)
+    if booking.check_in <= date.today():
+        return message("Only future stays can be cancelled.", 409)
+    booking.hotel.available_rooms += 1
+    db.session.delete(booking)
+    db.session.commit()
+    return {"message": "Your stay has been cancelled and inventory restored."}
+
+
+@api.get("/admin/dashboard")
+@admin_required
+def admin_dashboard():
+    recent_bookings = Booking.query.order_by(Booking.id.desc()).limit(12).all()
+    popular = (
+        db.session.query(Hotel, func.count(Booking.id).label("booking_count"))
+        .outerjoin(Booking)
+        .group_by(Hotel.id)
+        .order_by(func.count(Booking.id).desc(), Hotel.rating.desc())
+        .limit(5)
+        .all()
+    )
+    users = User.query.order_by(User.created_at.desc()).limit(12).all()
+    return jsonify({
+        "metrics": {
+            "travellers": User.query.filter_by(role="customer").count(),
+            "reservations": Booking.query.count(),
+            "active_stays": Booking.query.filter(Booking.check_out >= date.today()).count(),
+            "properties": Hotel.query.count(),
+        },
+        "popular_hotels": [{**hotel.public(), "booking_count": count} for hotel, count in popular],
+        "recent_bookings": [{
+            **booking.public(),
+            "guest_name": booking.user.username,
+            "guest_email": booking.user.email,
+        } for booking in recent_bookings],
+        "travellers": [{**member.public(), "joined": member.created_at.date().isoformat()} for member in users],
+    })
 
 
 @api.route("/admin/hotels", methods=["GET", "POST"])
