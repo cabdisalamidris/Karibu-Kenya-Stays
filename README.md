@@ -1,63 +1,44 @@
-# Aurum Reserve — Hotel Booking Management System
+# Karibu Stays — Kenya Hotel Booking Management System
 
-A full-stack luxury hotel booking experience. Guests can explore a collection of 12 exceptional residences, view signature dining, reserve hotel stays, and arrange protected chauffeur transfers. Authenticated administrators can add and remove properties from the live collection.
+Karibu Stays is a full-stack, Kenya-first hotel booking project. It helps tourists choose stays by the part of Kenya they are visiting instead of presenting an unstructured global hotel list.
 
-## Features
+## What makes the project presentation-ready
 
-- User Registration
-- User Login (JWT Authentication)
-- Curated catalogue of 12 seeded luxury hotels with pricing, location, amenities, rating, images, and signature meals
-- Hotel stay booking and private chauffeur booking with executive protection detail
-- JWT-protected customer account and booking APIs
-- Admin studio to add or remove hotels (with protected backend admin endpoints)
-- Responsive React interface with API-driven data
+- A responsive home page with destination exploration for Nairobi, Nakuru, Naivasha, Mombasa and Eldoret.
+- A curated catalogue of **25 Kenya properties**: five stays in every destination.
+- Naivasha properties are explicitly selected for Safari Rally, Lake Naivasha and wildlife travellers; Mombasa includes ocean-view and beachfront options.
+- Secure JWT registration and sign-in, protected bookings, and a traveller **My trips** area with future-stay cancellation.
+- Protected admin control room: traveller progress, recent booking activity, live booking totals, most-booked hotels, add hotel, remove hotel, and editable hotel rating on add/update.
+- API-driven React interface with an offline presentation fallback rather than random international hotels.
 
-## Technologies
+The catalogue uses established Kenyan hotel names and destination context drawn from hotel/operator information. It intentionally uses demonstration pricing, availability and image inventory; direct supplier booking APIs normally require commercial accounts and API keys. The project backend is the live REST API used by the frontend, so it can be demonstrated locally and deployed without exposing third-party credentials.
 
-### Backend
+## Technology stack
 
-- Flask
-- Flask REST API
-- PostgreSQL
-- SQLAlchemy
-- Marshmallow
-- JWT Authentication
-- Flask-Migrate
+| Area | Technology |
+| --- | --- |
+| Frontend | React, Vite, JavaScript (ES6+), JSX, HTML5, CSS3 |
+| Backend | Python, Flask, SQLAlchemy, Flask-Migrate, Marshmallow |
+| Security | Flask-JWT-Extended, Flask-Bcrypt, CORS allow-list |
+| Database | PostgreSQL in production; SQLite for local development |
+| Data exchange | REST API with JSON |
+| Deployment | Vercel (frontend) and Render (Flask API + PostgreSQL) |
 
-### Frontend
-
-- React
-- Vite
-- Axios
-- React Router
-
-## Project Structure
-
-Hotel_Booking_Management_System/
-
-- `backend/` — Flask, SQLAlchemy, PostgreSQL, JWT API
-- `client/` — React/Vite application
-
-## Installation
+## Local setup
 
 ### Backend
 
 ```bash
 cd backend
 pipenv install
-
 pipenv run flask --app run.py run --debug
 ```
 
-On first start the API automatically creates a local SQLite database and loads the initial 12 hotels, three chauffeur services, and the administrator account. You can repeat the seed manually with `pipenv run flask --app run.py seed`; it never duplicates the starter catalogue.
-
-The backend reads `DATABASE_URL` and `JWT_SECRET_KEY` from the environment. It uses a local SQLite database by default. To use PostgreSQL, set `DATABASE_URL` before starting the server, for example:
+The first start creates a local SQLite database and seeds the 25-property Kenya catalogue. To seed manually:
 
 ```bash
-export DATABASE_URL='postgresql://YOUR_POSTGRES_USER:YOUR_POSTGRES_PASSWORD@localhost/hotel_db'
+pipenv run flask --app run.py seed
 ```
-
-Set a secure `JWT_SECRET_KEY` and PostgreSQL credentials before deployment.
 
 ### Frontend
 
@@ -67,34 +48,40 @@ npm install
 npm run dev
 ```
 
-The Vite development server proxies `/api` to the Flask server at `http://127.0.0.1:5000`.
+For local development, Vite sends `/api` requests to the Flask service. For a separate deployed backend, set:
 
-## Deployment
+```bash
+VITE_API_URL=https://your-render-service.onrender.com
+```
 
-This repository is ready for a Git-connected deployment:
+## Deployment: Render + Vercel
 
-1. In Render, create a new **Blueprint** service from this repository. It reads `render.yaml`, installs the backend dependencies, starts Gunicorn, and seeds the catalogue.
-2. In Vercel, import this repository. The included `vercel.json` builds the React client and keeps direct links working.
-3. In Vercel's environment variables, set `VITE_API_URL` to the Render service URL (for example, `https://aurum-reserve-api.onrender.com`), then redeploy Vercel.
+1. Push this repository to GitHub.
+2. Create a Render **Blueprint** deployment. `render.yaml` creates the PostgreSQL database and API service.
+3. On Render, set `FRONTEND_URL` to your final Vercel URL, for example `https://karibu-stays.vercel.app`. For previews, use a comma-separated allow-list of exact origins.
+4. Import the repository into Vercel. The provided `vercel.json` builds `client/` and handles SPA routes.
+5. In Vercel environment variables set `VITE_API_URL` to the Render API URL, then redeploy.
+6. Verify `https://your-render-service.onrender.com/api/health`, register a traveller, make a booking, and sign in as the admin.
 
-The Render Blueprint creates a PostgreSQL database and supplies its private connection string as `DATABASE_URL`, so registered users and bookings persist across service restarts. It also accepts requests from the Vercel site and generates a production JWT secret.
+This explicit two-way configuration prevents the common Vercel/Render failure where the frontend calls its own domain instead of the Flask API or Render blocks the browser request with CORS.
 
-## First administrator
+## Admin demo account
 
-The seed command creates this development-only administrator account:
+For local presentation only:
 
-- Email: `admin@aurumreserve.com`
-- Password: `AurumAdmin2026!`
+- Email: `admin@karibustays.co.ke`
+- Password: `KaribuAdmin2026!`
 
-Sign in with it to reveal **Admin studio** in the navigation. Change this account's password and the JWT secret before any deployment.
+Change this password and set a strong `JWT_SECRET_KEY` in Render before public deployment. Do not commit real credentials.
 
-## API overview
+## Key API routes
 
-- `POST /api/auth/register`, `POST /api/auth/login`
-- `GET /api/hotels`, `GET /api/cars`
-- `POST /api/bookings`, `POST /api/car-bookings` (JWT required)
-- `GET|POST /api/admin/hotels`, `PATCH|DELETE /api/admin/hotels/:id` (administrator only)
+- `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`
+- `GET /api/hotels?city=Nairobi` and `GET /api/hotels/:id`
+- `POST /api/bookings`, `GET /api/bookings`, `DELETE /api/bookings/:id`
+- `GET /api/admin/dashboard`
+- `GET|POST /api/admin/hotels`, `PATCH|DELETE /api/admin/hotels/:id`
 
-## Author
+## Presentation narrative
 
-Abdisalam Abdi
+Start at the home page and select a destination. Explain that the system solves choice overload for Kenya visitors by grouping five purposeful hotels in each travel hub. Open Naivasha to demonstrate Safari Rally and wildlife relevance, then make a booking after registering. Finish by signing in as the admin to show live traveller progress, booking activity, popularity ranking and hotel management.
