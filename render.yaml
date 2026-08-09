@@ -21,6 +21,6 @@ services:
           name: aurum-reserve-db
           property: connectionString
       - key: FRONTEND_URL
-        value: "*"
+        sync: false
       - key: JWT_SECRET_KEY
         generateValue: true
