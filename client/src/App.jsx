@@ -2,7 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-const today = new Date().toISOString().slice(0, 10)
+const localDate = (date = new Date()) => {
+  const offsetDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60_000))
+  return offsetDate.toISOString().slice(0, 10)
+}
+const addDays = (dateValue, days) => {
+  const date = new Date(`${dateValue}T00:00:00`)
+  date.setDate(date.getDate() + days)
+  return localDate(date)
+}
+const today = localDate()
 const currency = new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: 0 })
 const destinations = [
   ['Nairobi', 'Kenya', 'City, culture & wildlife'], ['Nakuru', 'Kenya', 'Lake & Rift Valley'], ['Naivasha', 'Kenya', 'Rally & lakeside'],
@@ -105,7 +114,10 @@ function App() {
   }
   async function reserveHotel(event) {
     event.preventDefault(); if (!token) { setAuth('login'); return notify('Sign in or create an account to book a hotel.') }
-    const form = Object.fromEntries(new FormData(event.currentTarget)); const response = await fetch(`${API}/api/bookings`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ hotel_id: selectedHotel.id, check_in: form.check_in, check_out: form.check_out, guests: Number(form.guests) }) }); const payload = await dataFrom(response)
+    const form = Object.fromEntries(new FormData(event.currentTarget))
+    if (form.check_in < today) return notify('Choose today or a future date for check-in.')
+    if (form.check_out <= form.check_in) return notify('Check-out must be at least one day after check-in.')
+    const response = await fetch(`${API}/api/bookings`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ hotel_id: selectedHotel.id, check_in: form.check_in, check_out: form.check_out, guests: Number(form.guests) }) }); const payload = await dataFrom(response)
     if (!response.ok) return notify(payload.message || 'Your booking could not be completed.')
     setSelectedHotel(null); notify('Your hotel is reserved. Find it in My journey.'); loadJourney(); loadHotels()
   }
@@ -140,7 +152,23 @@ function App() {
   </main>
 }
 
-function HotelModal({ hotel, close, reserve }) { const [reviews, setReviews] = useState([]); useEffect(() => { fetch(`${API}/api/hotels/${hotel.id}/reviews`).then(dataFrom).then((data) => { if (Array.isArray(data)) setReviews(data) }).catch(() => {}) }, [hotel.id]); return <div className="overlay" onMouseDown={close}><section className="modal hotel-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close" onClick={close}>×</button><img src={hotel.image_url} onError={imageFallback} alt={hotel.name} /><div className="modal-copy"><p className="eyebrow">{hotel.location}</p><h2>{hotel.name}</h2><p>{hotel.description}</p><div className="details"><b>★ {Number(hotel.rating).toFixed(1)} guest perspective</b><span>{hotel.amenities.join(' · ')}</span><strong>{currency.format(hotel.price_per_night)} <small>per night</small></strong></div><form className="book-form" onSubmit={reserve}><label>Check in<input name="check_in" type="date" min={today} required /></label><label>Check out<input name="check_out" type="date" min={today} required /></label><label>Guests<select name="guests" defaultValue="2">{[1, 2, 3, 4, 5, 6].map((number) => <option key={number}>{number}</option>)}</select></label><button className="primary">Book this hotel <span>↗</span></button></form><div className="reviews"><h3>Guest experiences</h3>{reviews.length ? reviews.slice(0, 3).map((review) => <article key={review.id}><b>★ {review.rating} · {review.guest_name}</b><p>{review.comment}</p></article>) : <p>Be the first booked guest to share an experience.</p>}</div></div></section></div> }
+function HotelModal({ hotel, close, reserve }) {
+  const [reviews, setReviews] = useState([])
+  const [checkIn, setCheckIn] = useState(today)
+  const [checkOut, setCheckOut] = useState(addDays(today, 1))
+  const minimumCheckOut = addDays(checkIn || today, 1)
+
+  useEffect(() => { fetch(`${API}/api/hotels/${hotel.id}/reviews`).then(dataFrom).then((data) => { if (Array.isArray(data)) setReviews(data) }).catch(() => {}) }, [hotel.id])
+
+  function changeCheckIn(event) {
+    const value = event.target.value
+    setCheckIn(value)
+    const earliestCheckout = addDays(value || today, 1)
+    if (!checkOut || checkOut < earliestCheckout) setCheckOut(earliestCheckout)
+  }
+
+  return <div className="overlay" onMouseDown={close}><section className="modal hotel-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close" onClick={close}>×</button><img src={hotel.image_url} onError={imageFallback} alt={hotel.name} /><div className="modal-copy"><p className="eyebrow">{hotel.location}</p><h2>{hotel.name}</h2><p>{hotel.description}</p><div className="details"><b>★ {Number(hotel.rating).toFixed(1)} guest perspective</b><span>{hotel.amenities.join(' · ')}</span><strong>{currency.format(hotel.price_per_night)} <small>per night</small></strong></div><form className="book-form" onSubmit={reserve}><label>Check in<input name="check_in" type="date" min={today} value={checkIn} onChange={changeCheckIn} required /></label><label>Check out<input name="check_out" type="date" min={minimumCheckOut} value={checkOut} onChange={(event) => setCheckOut(event.target.value)} required /></label><label>Guests<select name="guests" defaultValue="2">{[1, 2, 3, 4, 5, 6].map((number) => <option key={number}>{number}</option>)}</select></label><p className="date-help">Check-out must be at least one night after check-in.</p><button className="primary">Book this hotel <span>↗</span></button></form><div className="reviews"><h3>Guest experiences</h3>{reviews.length ? reviews.slice(0, 3).map((review) => <article key={review.id}><b>★ {review.rating} · {review.guest_name}</b><p>{review.comment}</p></article>) : <p>Be the first booked guest to share an experience.</p>}</div></div></section></div>
+}
 function ServiceModal({ service, close, submit }) { return <div className="overlay" onMouseDown={close}><section className="modal compact-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close" onClick={close}>×</button><p className="eyebrow">Guest service request</p><h2>{service.title}</h2><p>Tell the guest team when you would like this service. They will track and confirm the request in your journey.</p><form className="book-form" onSubmit={submit}><label>Preferred date<input name="scheduled_for" type="date" min={today} required /></label><label className="wide">Notes<textarea name="notes" placeholder="Time, goals, pickup point, group size or any useful details" maxLength="500" /></label><button className="primary">Send request <span>↗</span></button></form></section></div> }
 function ReviewModal({ booking, close, submit }) { return <div className="overlay" onMouseDown={close}><section className="modal compact-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close" onClick={close}>×</button><p className="eyebrow">Guest perspective</p><h2>How was {booking.hotel.name}?</h2><p>Your rating and comment help future guests and update the hotel’s customer score.</p><form className="book-form" onSubmit={submit}><label>Rating<select name="rating" defaultValue="5">{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating} stars</option>)}</select></label><label className="wide">Your experience<textarea name="comment" minLength="8" placeholder="What did you enjoy, and what should a future guest know?" required /></label><button className="primary">Publish review <span>↗</span></button></form></section></div> }
 function AuthModal({ mode, close, submit, switchMode }) { const registering = mode === 'register'; return <div className="overlay" onMouseDown={close}><section className="modal compact-modal" onMouseDown={(event) => event.stopPropagation()}><button type="button" className="close" onClick={close}>×</button><p className="eyebrow">Karibu account</p><h2>{registering ? 'Start your journey.' : 'Welcome back.'}</h2><p>{registering ? 'Create an account to book hotels, request guest services and leave guest reviews.' : 'Sign in to manage your bookings and requests.'}</p><form className="book-form" onSubmit={submit}>{registering && <label className="wide">Full name<input name="username" minLength="3" required /></label>}<label className="wide">Email<input name="email" type="email" required /></label><label className="wide">Password<input name="password" type="password" minLength="6" required /></label><button type="submit" className="primary">{registering ? 'Create account' : 'Sign in'} <span>↗</span></button></form><p className="switch">{registering ? 'Already have an account?' : 'New to Karibu?'} <button type="button" onClick={switchMode}>{registering ? 'Sign in' : 'Create one'}</button></p></section></div> }
