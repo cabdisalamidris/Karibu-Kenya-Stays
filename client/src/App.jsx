@@ -74,6 +74,17 @@ function App() {
   const [notice, setNotice] = useState('')
 
   const notify = useCallback((text) => { setNotice(text); window.setTimeout(() => setNotice(''), 4500) }, [])
+  const expireSession = useCallback(() => {
+    localStorage.removeItem('karibu-token')
+    localStorage.removeItem('karibu-user')
+    setToken('')
+    setUser(null)
+    setBookings([])
+    setServiceRequests([])
+    setAdmin(false)
+    setAuth('login')
+    notify('Your session has expired. Please sign in again.')
+  }, [notify])
   const loadHotels = useCallback(async () => {
     try { const response = await fetch(`${API}/api/hotels`); const payload = await dataFrom(response); if (response.ok && Array.isArray(payload) && payload.length) setHotels(payload) } catch { /* The curated preview catalogue remains available offline. */ }
   }, [notify])
@@ -83,10 +94,11 @@ function App() {
     try {
       const [bookingResponse, serviceResponse] = await Promise.all([fetch(`${API}/api/bookings`, { headers }), fetch(`${API}/api/service-requests`, { headers })])
       const [bookingData, serviceData] = await Promise.all([dataFrom(bookingResponse), dataFrom(serviceResponse)])
+      if (bookingResponse.status === 401 || serviceResponse.status === 401) return expireSession()
       if (bookingResponse.ok) setBookings(bookingData.filter((item) => item.type === 'stay'))
       if (serviceResponse.ok) setServiceRequests(serviceData)
     } catch { notify('Your journey information could not be loaded.') }
-  }, [token, notify])
+  }, [token, notify, expireSession])
 
   useEffect(() => { loadHotels(); fetch(`${API}/api/cars`).then(async (response) => ({ response, payload: await dataFrom(response) })).then(({ response, payload }) => { if (response.ok && Array.isArray(payload) && payload.length) setCars(payload) }).catch(() => {}) }, [loadHotels])
   useEffect(() => { loadJourney() }, [loadJourney])
@@ -118,21 +130,24 @@ function App() {
     if (form.check_in < today) return notify('Choose today or a future date for check-in.')
     if (form.check_out <= form.check_in) return notify('Check-out must be at least one day after check-in.')
     const response = await fetch(`${API}/api/bookings`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ hotel_id: selectedHotel.id, check_in: form.check_in, check_out: form.check_out, guests: Number(form.guests) }) }); const payload = await dataFrom(response)
+    if (response.status === 401) return expireSession()
     if (!response.ok) return notify(payload.message || 'Your booking could not be completed.')
     setSelectedHotel(null); notify('Your hotel is reserved. Find it in My journey.'); loadJourney(); loadHotels()
   }
   async function requestService(event) {
     event.preventDefault(); if (!token) { setAuth('login'); return notify('Sign in or create an account to request a guest service.') }
     const form = Object.fromEntries(new FormData(event.currentTarget)); const response = await fetch(`${API}/api/service-requests`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ service_type: selectedService.type, service_name: selectedService.title || selectedService.name, scheduled_for: form.scheduled_for, notes: form.notes }) }); const payload = await dataFrom(response)
+    if (response.status === 401) return expireSession()
     if (!response.ok) return notify(payload.message || 'Your service request could not be sent.')
     setSelectedService(null); notify(payload.message); loadJourney()
   }
   async function submitReview(event) {
     event.preventDefault(); const form = Object.fromEntries(new FormData(event.currentTarget)); const response = await fetch(`${API}/api/hotels/${reviewBooking.hotel.id}/reviews`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ rating: Number(form.rating), comment: form.comment }) }); const payload = await dataFrom(response)
+    if (response.status === 401) return expireSession()
     if (!response.ok) return notify(payload.message || 'Your review could not be saved.')
     setReviewBooking(null); notify(payload.message); loadHotels()
   }
-  async function cancelBooking(id) { const response = await fetch(`${API}/api/bookings/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }); const payload = await dataFrom(response); if (!response.ok) return notify(payload.message || 'This booking could not be cancelled.'); notify(payload.message); loadJourney(); loadHotels() }
+  async function cancelBooking(id) { const response = await fetch(`${API}/api/bookings/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }); const payload = await dataFrom(response); if (response.status === 401) return expireSession(); if (!response.ok) return notify(payload.message || 'This booking could not be cancelled.'); notify(payload.message); loadJourney(); loadHotels() }
   function signOut() { localStorage.removeItem('karibu-token'); localStorage.removeItem('karibu-user'); setToken(''); setUser(null); setBookings([]); setServiceRequests([]); setAdmin(false); notify('You have signed out.') }
 
   if (admin && user?.role === 'admin') return <AdminWorkspace token={token} hotels={hotels} setHotels={setHotels} exit={() => setAdmin(false)} notify={notify} />
